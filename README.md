@@ -47,7 +47,52 @@ This is the central brain and user interface of the system. It runs on your main
     - Rule 1: 3 failed logins + 1 successful login from same IP → *Potential Brute Force Success*  
     - Rule 2: New user created + login within 5 minutes → *Suspicious New User Activity*  
 
+## 🤖 AI Functions
+
+### `process_ai_prompt`
+Executes the query on the database based on the parsed JSON command.
+
+### `get_gemini_analysis`
+Sends recent logs and open-ended analytical questions (e.g., “summarize threats”) to **Google Gemini AI** for detailed analysis.
+
 ---
+
+## 🌐 Web Dashboard (Flask + HTML/JS)
+
+**Purpose:**  
+Hosts the web-based user interface and API endpoints for the SIEM system.
+
+**Dashboard Displays:**
+- Real-time statistics (Total Events, Alerts, Agents)
+- Live log stream
+- Pop-up alert notifications
+- Active agent list (shows agents active in the last 5 minutes)
+
+---
+
+## 🔧 How to Run (Beginner-Friendly Guide)
+
+Follow these steps to set up and run **Guardian SIEM** on a Windows system.
+
+---
+
+### 1. Prerequisites
+
+- **Python:** Install Python 3.x from [python.org](https://www.python.org).  
+  ✅ During installation, check the box **“Add Python to PATH.”**
+- **pip:** Comes pre-installed with Python.
+- **Npcap:** Required for network sniffing — download and install from [npcap.com](https://npcap.com).
+- **Google Gemini API Key:** Obtain it from **Google AI Studio**.
+
+---
+
+### 2. Project Setup
+
+1. **Create Project Folder**  
+   Example:
+   ```bash
+   F:\SOC_Project
+
 
 ### 🤖 AI Analyst (Gemini Powered)
 
