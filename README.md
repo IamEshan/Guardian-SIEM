@@ -1,84 +1,58 @@
-# Guardian SIEM (Security Information and Event Management)
+# Guardian SIEM - Project Report & Setup Guide
 
-> A lightweight, AI-powered SIEM solution built with Python, Flask, and Google Gemini for real-time log analysis, threat correlation, and security monitoring.
+**Date:** October 22, 2025
 
-This project is a foundational SIEM tool designed to collect, analyze, and visualize security events from multiple sources. It leverages the analytical power of Google's Gemini AI to parse natural language queries, analyze threat patterns, and provide actionable insights, all within a clean, Wazuh-inspired web dashboard.
+**Project Goal:**  
+To develop a foundational **Security Information and Event Management (SIEM)** system with integrated AI capabilities for log analysis, threat detection, and response simulation.
 
-## 🚀 Key Features
+**Current Status:**  
+A functional prototype, named **"Guardian SIEM"**, has been successfully developed. It integrates log collection from Windows endpoints, network traffic sniffing, log normalization, correlation, threat intelligence mapping (MITRE ATT&CK, simulated CVEs), basic risk management, and utilizes the **Google Gemini AI** for advanced log analysis via a web-based dashboard inspired by Wazuh.
 
-* **Multi-Agent Log Collection:** A lightweight Python agent (`agent.py`) collects Windows Event Logs (Security, Application, System) from multiple hosts.
-* **Real-time Dashboard:** A Flask-based web UI displays incoming logs, key security metrics, and active agent status.
-* **Network Sniffing:** Captures and analyzes basic network traffic (TCP, UDP, ICMP) on the server.
-* **Log Enrichment (Threat Intel):**
-    * **GeoIP Location:** Automatically enriches external IP addresses with geographic location data (City, Country, ISP).
-    * **Reverse DNS (Hostname):** Resolves external IPs to their hostnames for easier identification.
-    * **MITRE ATT&CK Mapping:** Maps known malicious Event IDs (e.g., 4625, 4720) to the MITRE ATT&CK framework.
-* **AI Analyst (Gemini Powered):**
-    * **Natural Language Queries:** Ask questions in any language (e.g., "show me failed logins from last hour" or "সন্দেহজনক কার্যকলাপ সারসংক্ষেপ কর").
-    * **Automated Analysis:** The AI parses user intent to either query the log database or generate a full analytical report on potential threats.
-* **Real-time Alerting:**
-    * **Correlation Engine:** A background thread analyzes logs to detect patterns (e.g., Brute Force Success, Suspicious New User) and generates correlated alerts.
-    * **Pop-up Notifications:** Displays real-time pop-up alerts on the dashboard when a new correlated alert is generated.
-* **Agent Management:** The dashboard displays a list of all active agents, their last-seen time, and allows filtering logs per-agent.
+---
 
-## 🛠️ Technologies Used
+## 1. How It Works (Core Components)
 
-* **Backend:** Python, Flask
-* **Frontend:** HTML, CSS, JavaScript (all within the Flask template)
-* **AI:** Google Gemini (via `google-generativeai`)
-* **Database:** SQLite
-* **Log Collection:** `pywin32` (for Windows Event Logs)
-* **Network Sniffing:** `scapy`
-* **Threat Intel:** `requests` (for ip-api.com), `socket` (for DNS)
+The Guardian SIEM system currently consists of two main Python scripts that work together:
 
-## 🔧 How to Run
+### 🖥️ `agent.py` (The Collector)
 
-### 1. Prerequisites
+**What it does:**  
+Runs on any Windows machine you want to monitor (e.g., personal PC, server). Its job is to collect important logs and send them to the main server.
 
-* Python 3.x (with pip)
-* Npcap (for Scapy network sniffing on Windows)
-* Git (for version control)
-* A Google Gemini API Key.
+- **Log Collection (`fetch_new_events`):** Monitors Windows Event Logs ("Security", "Application", "System") in real-time.  
+- **Data Extraction (`get_event_details`):** Parses raw logs to extract Event ID, timestamp, username, and IP address.  
+- **Log Forwarding (`send_logs_in_batches`):** Sends logs securely over the network to `soc_dashboard.py` in batches to prevent timeouts.  
+- **Identity:** Sends a unique `AGENT_ID` and `AGENT_NAME` so the server can identify the source machine.
 
-### 2. Setup (Server)
+---
 
-1.  **Clone the repository:**
-    ```shell
-    git clone [https://github.com/IamEshan/Guardian-SIEM.git](https://github.com/IamEshan/Guardian-SIEM.git)
-    cd Guardian-SIEM
-    ```
-2.  **Create Virtual Environment:**
-    ```shell
-    python -m venv venv
-    .\venv\Scripts\activate
-    ```
-3.  **Install Dependencies:**
-    ```shell
-    pip install Flask scapy google-generativeai pywin32 requests
-    ```
-4.  **Configure API Key:**
-    * Open `soc_dashboard.py` in a text editor.
-    * Find the line `GEMINI_API_KEY = "YOUR_GOOGLE_AI_API_KEY"` and replace it with your actual Gemini API key.
-5.  **Run the Server:**
-    You must run this in a terminal with **Administrator privileges** (for network sniffing).
-    ```shell
-    python soc_dashboard.py
-    ```
+### 🧠 `soc_dashboard.py` (The Server & Dashboard)
 
-### 3. Setup (Agent)
+**What it does:**  
+This is the central brain and user interface of the system. It runs on your main server machine.
 
-1.  Copy the `agent.py` file to any Windows machine you want to monitor.
-2.  Install Python and dependencies on the agent machine: `pip install pywin32 requests`
-3.  **Configure the Agent:**
-    * Open `agent.py` in a text editor.
-    * Change `AGENT_NAME` to a unique name for that machine (e.g., "Domain-Controller" or "Dev-Workstation").
-    * Change `SERVER_URL` to the IP address of your `soc_dashboard.py` server (e.g., `http://192.168.1.100:5000/api/logs`).
-4.  **Run the Agent:**
-    You must run this in a terminal with **Administrator privileges** (for reading Security logs).
-    ```shell
-    python agent.py
-    ```
+- **Log Reception (`/api/logs`):** API endpoint that listens for incoming logs from all active agents.  
+- **Network Sniffing (`packet_handler`):** Collects its own data by sniffing network traffic (e.g., pings, web connections).  
+- **Log Parsing & Enrichment (`parse_and_format_log`):**
+  - **Normalizes:** Cleans and standardizes incoming logs.  
+  - **Enriches (Threat Intel):**
+    - **GeoIP:** Identifies external IP locations (e.g., "Mountain View, USA").  
+    - **DNS:** Resolves external IPs to hostnames.  
+    - **MITRE ATT&CK:** Maps Event IDs (e.g., 4625 - Failed Logon) to MITRE ATT&CK techniques (e.g., T1110.003).  
+- **Database Storage (`add_log_to_db`):** Saves all processed logs in `logs.db` (SQLite).  
+- **Statistics (`update_stats_from_log`):** Updates real-time dashboard counters (Total Events, Failed Logins, etc.).  
+- **Correlation Engine (`correlation_engine`):**
+  - Scans the database every 30 seconds for suspicious multi-log patterns.
+  - **Examples:**
+    - Rule 1: 3 failed logins + 1 successful login from same IP → *Potential Brute Force Success*  
+    - Rule 2: New user created + login within 5 minutes → *Suspicious New User Activity*  
 
-### 4. Access the Dashboard
+---
 
-Open your web browser and navigate to the server's address: `http://127.0.0.1:5000` (if running on the same machine) or `http://[Server-IP]:5000`.
+### 🤖 AI Analyst (Gemini Powered)
+
+- **`gemini_query_parser`:**  
+  Converts natural language queries (e.g., “show me failed logins from last hour”) into JSON commands.  
+  Example:  
+  ```json
+  {"description_like": "Failed Logon", "time_range_str": "1h"}
