@@ -10,147 +10,111 @@ Multi-Agent Log Collection: A lightweight Python agent (agent.py) collects Windo
 
 Real-time Dashboard: A Flask-based web UI displays incoming logs, key security metrics, and active agent status.
 
+Network Sniffing: Captures and analyzes basic network traffic (TCP, UDP, ICMP) on the server.
+
+Log Enrichment (Threat Intel):
+
+GeoIP Location: Automatically enriches external IP addresses with geographic location data (City, Country, ISP).
+
+Reverse DNS (Hostname): Resolves external IPs to their hostnames for easier identification.
+
+MITRE ATT&CK Mapping: Maps known malicious Event IDs (e.g., 4625, 4720) to the MITRE ATT&CK framework.
+
 AI Analyst (Gemini Powered):
 
 Natural Language Queries: Ask questions in any language (e.g., "show me failed logins from last hour" or "সন্দেহজনক কার্যকলাপ সারসংক্ষেপ কর").
 
 Automated Analysis: The AI parses user intent to either query the log database or generate a full analytical report on potential threats.
 
-Threat Intelligence Integration:
+Real-time Alerting:
 
-GeoIP Enrichment: Automatically enriches external IP addresses with geographic location data (City, Country, ISP).
+Correlation Engine: A background thread analyzes logs to detect patterns (e.g., Brute Force Success, Suspicious New User) and generates correlated alerts.
 
-Reverse DNS (Hostname): Resolves external IPs to their hostnames for easier identification.
+Pop-up Notifications: Displays real-time pop-up alerts on the dashboard when a new correlated alert is generated.
 
-MITRE ATT&CK Mapping: Maps critical events (like Event ID 4625, 4720) to their corresponding MITRE ATT&CK techniques.
+Agent Management: The dashboard displays a list of all active agents, their last-seen time, and allows filtering logs per-agent.
 
-Real-time Event Correlation: A background engine analyzes incoming logs to detect patterns, such as:
+🛠️ Technologies Used
 
-Brute Force Success: (e.g., 3+ failed logins followed by a success from the same IP).
+Backend: Python, Flask
 
-Suspicious New User: (e.g., A new user account logs in immediately after creation).
+Frontend: HTML, CSS, JavaScript (all within the Flask template)
 
-Pop-up Alerting: Generates real-time toast notifications in the dashboard when a new correlated alert is triggered.
+AI: Google Gemini (via google-generativeai)
 
-Network Monitoring: Includes a basic packet sniffer (using Scapy) to monitor and log network traffic.
+Database: SQLite
 
-⚙️ Technology Stack
+Log Collection: pywin32 (for Windows Event Logs)
 
-Backend: Python 3, Flask
+Network Sniffing: scapy
 
-Frontend: HTML, CSS, JavaScript (no frameworks)
+Threat Intel: requests (for ip-api.com), socket (for DNS)
 
-Log Collection: pywin32 (for Windows Event Logs), Scapy (for network packets)
+🔧 How to Run
 
-Database: SQLite3
+1. Prerequisites
 
-AI & Intel:
+Python 3.x (with pip)
 
-Google Gemini AI (via google-generativeai)
+Npcap (for Scapy network sniffing on Windows)
 
-ip-api.com (for GeoIP)
+Git (for version control)
 
-socket (for Reverse DNS)
+A Google Gemini API Key.
 
-📦 Components
+2. Setup (Server)
 
-soc_dashboard.py (The Server)
+Clone the repository:
 
-The central brain of the operation.
-
-Runs the Flask web server and serves the dashboard UI.
-
-Provides API endpoints (/api/logs, /api/stats, /api/agents, etc.).
-
-Receives logs from all agents and the network sniffer.
-
-Parses, enriches (GeoIP, DNS), and stores logs in the logs.db database.
-
-Runs the background correlation engine.
-
-Communicates with the Google Gemini API to parse queries and generate analysis.
-
-agent.py (The Agent)
-
-A lightweight script to be run on each Windows machine (endpoint) you want to monitor.
-
-Must be run as Administrator to access the Security logs.
-
-Generates a unique, persistent ID (AGENT_ID) for the machine.
-
-Reads new events from "Security", "Application", and "System" logs.
-
-Sends these logs in batches to the soc_dashboard.py server.
-
-🏁 Getting Started
-
-Prerequisites
-
-Python 3.x
-
-Npcap (Required by Scapy for packet sniffing)
-
-A Google Gemini API Key (from Google AI Studio)
-
-Setup & Run
-
-Clone the Repository:
-
-git clone [https://github.com/YourUsername/Guardian-SIEM.git](https://github.com/YourUsername/Guardian-SIEM.git)
+git clone [https://github.com/IamEshan/Guardian-SIEM.git](https://github.com/IamEshan/Guardian-SIEM.git)
 cd Guardian-SIEM
 
 
-Create Virtual Environment & Install Dependencies:
+Create Virtual Environment:
 
 python -m venv venv
 .\venv\Scripts\activate
-pip install -r requirements.txt 
 
 
-(Note: You will need to create a requirements.txt file containing Flask, scapy, google-generativeai, pywin32, and requests)
+Install Dependencies:
 
-Configure the Server:
+pip install Flask scapy google-generativeai pywin32 requests
 
-Open soc_dashboard.py.
 
-Find the GEMINI_API_KEY variable and paste your API key.
+Configure API Key:
 
-Run the Server (Terminal 1 - Admin):
+Open soc_dashboard.py in a text editor.
 
-Ensure your venv is active.
+Find the line GEMINI_API_KEY = "YOUR_GOOGLE_AI_API_KEY" and replace it with your actual Gemini API key.
 
-Run the dashboard:
+Run the Server:
+
+You must run this in a terminal with Administrator privileges (for network sniffing).
 
 python soc_dashboard.py
 
 
-The server will start on http://127.0.0.1:5000.
+3. Setup (Agent)
 
-Configure & Run the Agent (Terminal 2 - Admin):
+Copy the agent.py file to any Windows machine you want to monitor.
 
-Open agent.py.
+Install Python and dependencies on the agent machine: pip install pywin32 requests
 
-Change the AGENT_NAME variable to a unique name for your computer (e.g., "Dev-Laptop").
+Configure the Agent:
 
-(Optional: If your server is on a different PC, change SERVER_URL to the server's IP).
+Open agent.py in a text editor.
 
-In a new Administrator terminal with the venv active, run the agent:
+Change AGENT_NAME to a unique name for that machine (e.g., "Domain-Controller" or "Dev-Workstation").
+
+Change SERVER_URL to the IP address of your soc_dashboard.py server (e.g., http://192.168.1.100:5000/api/logs).
+
+Run the Agent:
+
+You must run this in a terminal with Administrator privileges (for reading Security logs).
 
 python agent.py
 
 
-View the Dashboard:
+4. Access the Dashboard
 
-Open your web browser and go to http://127.0.0.1:5000.
-
-You should see your agent appear in the "Active Agents" list and logs begin to flow into the "Live Log Stream".
-
-🗺️ Future Roadmap
-
-[ ] SOAR Integration: Automatically block malicious IPs on the Windows Firewall.
-
-[ ] UEBA: Profile normal user behavior (logon times, source IPs) and alert on anomalies.
-
-[ ] Honeypot Detection: Alert when a specific "decoy" file or user account is accessed.
-
-[ ] External Threat Intel: Cross-reference IPs/hashes with public threat feeds (e.g., AbuseIPDB).
+Open your web browser and navigate to the server's address: http://127.0.0.1:5000 (if running on the same machine) or http://[Server-IP]:5000.
