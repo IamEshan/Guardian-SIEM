@@ -1,161 +1,234 @@
-Guardian SIEM - Project Report & Setup Guide
-============================================
+# 🛡️ Guardian SIEM - Project Report & Setup Guide
 
-**Date:** October 22, 2025
+**Date:** October 22, 2025  
+**Author:** Touhiduzzaman Eshan  
 
-**Project Goal:** To develop a foundational Security Information and Event Management (SIEM) system with integrated AI capabilities for log analysis, threat detection, and response simulation.
+---
 
-**Current Status:** A functional prototype, named "Guardian SIEM," has been successfully developed. It integrates log collection from Windows endpoints, network traffic sniffing, log normalization, correlation, threat intelligence mapping (MITRE ATT&CK, simulated CVEs), basic risk management, and utilizes the Google Gemini AI for advanced log analysis via a web-based dashboard inspired by Wazuh.
+## 🎯 Project Goal
+To develop a foundational **Security Information and Event Management (SIEM)** system with integrated **AI capabilities** for log analysis, threat detection, and response simulation.
 
-1\. How It Works (Core Components)
-----------------------------------
+---
 
-The Guardian SIEM system currently consists of two main Python scripts that work together:
+## 📊 Current Status
+A functional prototype, named **"Guardian SIEM"**, has been successfully developed.  
+It integrates:
+- Log collection from Windows endpoints  
+- Network traffic sniffing  
+- Log normalization and correlation  
+- Threat intelligence mapping (MITRE ATT&CK, simulated CVEs)  
+- Basic risk management  
+- **Google Gemini AI** for advanced log analysis  
+- Web-based dashboard inspired by Wazuh  
 
-1.  **agent.py (The Collector):**
-    
-    *   **What it does:** This script runs on any Windows machine you want to monitor (e.g., your personal PC, a server). Its only job is to collect important logs and send them to the main server.
-        
-    *   **Log Collection (fetch\_new\_events):** It monitors specified Windows Event Logs ("Security", "Application", "System") in real-time.
-        
-    *   **Data Extraction (get\_event\_details):** It parses the raw log to pull out key information (Event ID, timestamp, username, IP address).
-        
-    *   **Log Forwarding (send\_logs\_in\_batches):** It sends the collected logs securely over the network to the soc\_dashboard.py server. It sends them in "batches" to avoid network timeouts.
-        
-    *   **Identity:** It sends a unique AGENT\_ID and AGENT\_NAME so the server knows _which_ computer the log came from.
-        
-2.  **soc\_dashboard.py (The Server & Dashboard):**
-    
-    *   **What it does:** This is the central brain and user interface of the entire system. It runs on your main server machine.
-        
-    *   **Log Reception (/api/logs):** It has an API that listens for and receives the logs sent by all active agents.
-        
-    *   **Network Sniffing (packet\_handler):** It also collects its _own_ data by sniffing network traffic (like pings or website connections) on the server machine itself.
-        
-    *   **Log Parsing & Enrichment (parse\_and\_format\_log):** This is a critical step. When a log arrives, this function:
-        
-        *   **Normalizes:** Cleans up the log and standardizes it.
-            
-        *   **Enriches (Threat Intel):**
-            
-            *   **GeoIP:** Checks if any IP address is external. If so, it finds its geographic location (e..g., "Mountain View, USA").
-                
-            *   **DNS:** Tries to find the hostname for external IPs (e.g., "https://www.google.com/search?q=google-dns.com").
-                
-            *   **MITRE ATT&CK:** Maps known dangerous Event IDs (like 4625 - Failed Logon) to the official MITRE ATT&CK framework (e.g., T1110.003).
-                
-    *   **Database Storage (add\_log\_to\_db):** It stores all processed and enriched logs in an SQLite database file (logs.db).
-        
-    *   **Statistics (update\_stats\_from\_log):** It updates the in-memory statistics (Total Events, Failed Logins, etc.) with _every_ new log that arrives. This is what makes the dashboard counters update in real-time.
-        
-    *   **Correlation Engine (correlation\_engine):** A background thread that runs every 30 seconds. It scans the database for suspicious _patterns_ that a single log wouldn't catch. For example:
-        
-        *   Rule 1: 3 failed logins + 1 successful login from the same IP = **"Potential Brute Force Success"** alert.
-            
-        *   Rule 2: A new user account is created + that user logs in within 5 minutes = **"Suspicious New User Activity"** alert.
-            
-    *   **AI Analyst (Gemini Powered):**
-        
-        *   gemini\_query\_parser: When you type a query (in any language), this function first sends it to Gemini to understand your _intent_. Gemini translates "show me failed logins from last hour" into a computer-readable JSON command: {"description\_like": "Failed Logon", "time\_range\_str": "1h"}.
-            
-        *   process\_ai\_prompt: This function takes the JSON command from the parser and queries the database for the _exact_ logs you asked for.
-            
-        *   get\_gemini\_analysis: If you ask an open-ended question (like "summarize threats"), this function sends the question _plus_ the 30 most recent logs to Gemini to generate a full, detailed analytical report.
-            
-    *   **Web Dashboard (Flask & HTML/JS):** This hosts the web server and displays the HTML\_TEMPLATE (your UI). It provides API endpoints that the JavaScript in your browser calls every few seconds to refresh the stats, agent list, and alerts.
-        
-    *   **Pop-up & Agent List:** It shows real-time pop-ups for new alerts and displays all agents that have sent a log in the last 5 minutes.
-        
+---
 
-🔧 How to Run (Beginner-Friendly Guide)
----------------------------------------
+## ⚙️ 1. How It Works (Core Components)
 
-Follow these steps carefully to set up and run the Guardian SIEM prototype on a Windows machine.
+The Guardian SIEM system consists of two main Python scripts that work together:
 
-### 1\. Prerequisites:
+---
 
-*   **Python:** Ensure you have Python 3.x installed. You can get it from [python.org](https://www.python.org/). During installation, **check the box that says "Add Python to PATH"**.
-    
-*   **pip:** Python's package installer, usually included with Python.
-    
-*   **Npcap:** Required for network sniffing. Download and install it from [npcap.com](https://npcap.com/) (use default settings).
-    
-*   **Google Gemini API Key:** You must have an API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
-    
+### 🖥️ agent.py — The Collector
 
-### 2\. Project Setup:
+**Purpose:**  
+Runs on any Windows machine you want to monitor (e.g., personal PC or server).  
+Its main job is to collect system logs and send them securely to the main SIEM server.
 
-1.  **Create Project Folder:** Create a new, empty folder (e.g., F:\\SOC\_Project).
-    
-2.  **Add Files:** Copy your two files, soc\_dashboard.py and agent.py, into this new folder.
-    
+#### 🧩 Core Functions:
+- **Log Collection (`fetch_new_events`)**  
+  Monitors specified Windows Event Logs (`Security`, `Application`, `System`) in real-time.  
 
-### 3\. Create Virtual Environment:
+- **Data Extraction (`get_event_details`)**  
+  Parses raw logs to extract key details like:
+  - Event ID  
+  - Timestamp  
+  - Username  
+  - IP Address  
 
-This creates a private "bubble" for your project's libraries.
+- **Log Forwarding (`send_logs_in_batches`)**  
+  Sends logs securely to the server in small batches to avoid timeouts.  
 
-1.  Open **Command Prompt (cmd) as Administrator**. (Search for cmd, right-click, select "Run as administrator").
-    
-2.  cd F:\\SOC\_Project
-    
-3.  python -m venv venv
-    
-4.  .\\venv\\Scripts\\activate
-    
-5.  Your command prompt line should now start with (venv).
-    
+- **Agent Identity**  
+  Each agent sends a unique `AGENT_ID` and `AGENT_NAME`, allowing the server to identify which machine the data came from.  
 
-### 4\. Install Dependencies:
+---
 
-While your venv is active, run this single command to install all required libraries:
+### 🧠 soc_dashboard.py — The Server & Dashboard
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   pip install Flask scapy google-generativeai pywin32 requests   `
+**Purpose:**  
+Acts as the **central brain** and **user interface** for the entire system.  
+It receives logs, processes them, enriches them with threat intelligence, and displays them on the dashboard.
 
-### 5\. Configure API Key:
+#### ⚙️ Core Components:
 
-1.  Open soc\_dashboard.py in a text editor (like Notepad).
-    
-2.  GEMINI\_API\_KEY = "AIzaSyBigGgQ50k6eVuHDT-VRWTVaECg8e-OQUU" _(Note: This appears to be your key, but if it's a placeholder, replace it)._
-    
-3.  Replace the key with your **own Gemini API key** if necessary (keep the quotes).
-    
+- **Log Reception (`/api/logs`)**  
+  An API endpoint that listens for incoming logs from all active agents.  
+
+- **Network Sniffing (`packet_handler`)**  
+  Collects real-time traffic data (e.g., ICMP, HTTP) from the server’s network interface.  
+
+- **Log Parsing & Enrichment (`parse_and_format_log`)**
+  - **Normalize:** Cleans and standardizes log data.  
+  - **Enrich:** Adds external intelligence such as:
+    - **GeoIP:** Determines the country or city of external IPs.  
+    - **DNS Resolution:** Converts IPs to hostnames.  
+    - **MITRE ATT&CK Mapping:** Maps Event IDs (e.g., 4625 - Failed Logon → T1110.003).  
+
+- **Database Storage (`add_log_to_db`)**  
+  Saves normalized logs into `logs.db` (SQLite).  
+
+- **Statistics (`update_stats_from_log`)**  
+  Updates in-memory statistics such as:
+  - Total Events  
+  - Failed Logins  
+  - Active Agents  
+
+  These stats appear live on the dashboard.
+
+---
+
+### ⚡ Correlation Engine (`correlation_engine`)
+
+A background process that runs every 30 seconds to detect multi-stage attacks or suspicious patterns.
+
+#### 🔍 Example Rules:
+- **Rule 1:** 3 failed logins + 1 successful login from the same IP =  
+  → **Potential Brute Force Success**
+
+- **Rule 2:** New user creation + login within 5 minutes =  
+  → **Suspicious New User Activity**
+
+---
+
+## 🤖 AI Analyst (Gemini Powered)
+
+The AI module uses **Google Gemini** to enhance analytical and query capabilities.
+
+#### Modules:
+- **`gemini_query_parser`**  
+  Converts natural language queries into structured JSON filters.  
+  Example:  
+  > “Show me failed logins from last hour”  
+  → `{"description_like": "Failed Logon", "time_range_str": "1h"}`
+
+- **`process_ai_prompt`**  
+  Executes the parsed JSON query on the logs database.
+
+- **`get_gemini_analysis`**  
+  Sends recent logs + your query (e.g., “summarize threats”) to Gemini.  
+  Returns a summarized analytical report of recent threats or anomalies.
+
+---
+
+## 🌐 Web Dashboard (Flask + HTML/JS)
+
+The web dashboard hosts the GUI for the SIEM system.
+
+### Key Features:
+- Real-time statistics display (Total Events, Alerts, Agents)
+- Live log stream
+- Pop-up alerts for suspicious activity
+- List of active agents (updated every 5 minutes)
+
+**Access URL:**  
+http://127.0.0.1:5000
+
+---
+
+---
+
+## 🔧 How to Run (Beginner-Friendly Guide)
+
+Follow these steps to set up and run the Guardian SIEM prototype on Windows.
+
+---
+
+### 🧩 Step 1: Prerequisites
+
+| Tool | Purpose | Download |
+|------|----------|-----------|
+| **Python 3.x** | Core programming environment | [python.org](https://www.python.org) |
+| **pip** | Python package installer | Comes with Python |
+| **Npcap** | For network packet capture | [npcap.com](https://npcap.com) |
+| **Google Gemini API Key** | Enables AI analysis | [Google AI Studio](https://aistudio.google.com) |
+
+✅ During Python installation, check the box: **“Add Python to PATH”**
+
+---
+
+### 📁 Step 2: Project Setup
+
+1. **Create a Project Folder:**  
+   Example: F:\SOC_Project
+
+---
+   
+3. **Add Files:**  
+Copy both scripts into your folder:
+soc_dashboard.py
+agent.py
+
+
+---
+
+### 🧱 Step 3: Create a Virtual Environment
+
+Open **Command Prompt (as Administrator)** and run:
+
+```bash
+cd F:\SOC_Project
+python -m venv venv
+.\venv\Scripts\activate
+
+
+### 4. Install Dependencies:
+
+While your `venv` is active, run this single command to install all required libraries:
+
+```cmd
+pip install Flask scapy google-generativeai pywin32 requests
+
+
+### 5. Configure API Key:
+
+1.  Open `soc_dashboard.py` in a text editor (like Notepad).
+2.  Find this line (near the top):
+    ```python
+    GEMINI_API_KEY = "AIzaSyBigGgQ50k6eVuHDT-VRWTVaECg8e-OQUU" 
+    ```
+    (Note: This appears to be your key, but if it's a placeholder, replace it).
+3.  Replace the key with your own Gemini API key if necessary (keep the quotes).
 4.  Save and close the file.
-    
 
-### 6\. Run the SIEM (Server & Agent):
+### 6. Run the SIEM (Server & Agent):
 
 You need **two** Administrator Command Prompts open at the same time.
 
 **Terminal 1: Run the Server**
 
 1.  Open your **first** Administrator Command Prompt.
-    
-2.  Navigate to your folder: cd F:\\SOC\_Project
-    
-3.  Activate the environment: .\\venv\\Scripts\\activate
-    
-4.  python soc\_dashboard.py
-    
+2.  Navigate to your folder: `cd F:\SOC_Project`
+3.  Activate the environment: `.\venv\Scripts\activate`
+4.  Run the server:
+    ```cmd
+    python soc_dashboard.py
+    ```
 5.  Keep this terminal open. It will show debug messages.
-    
 
 **Terminal 2: Run the Agent**
 
 1.  Open a **second** Administrator Command Prompt.
-    
-2.  Navigate to your folder: cd F:\\SOC\_Project
-    
-3.  Activate the environment: .\\venv\\Scripts\\activate
-    
-4.  python agent.py
-    
+2.  Navigate to your folder: `cd F:\SOC_Project`
+3.  Activate the environment: `.\venv\Scripts\activate`
+4.  Run the agent:
+    ```cmd
+    python agent.py
+    ```
 5.  Keep this terminal open. It will show logs as it finds and sends them.
-    
 
-### 7\. Access the Dashboard
+### 7. Access the Dashboard
 
-*   Open your web browser (like Chrome or Firefox).
-    
-*   Go to the address: http://127.0.0.1:5000
-    
-*   You should see the "Guardian SIEM" dashboard. As your agent sends logs, the "Total Events" counter and "Live Log Stream" will update automatically.
+1.  Open your web browser (like Chrome or Firefox).
+2.  Go to the address: `http://127.0.0.1:5000`
+3.  You should see the "Guardian SIEM" dashboard. As your agent sends logs, the "Total Events" counter and "Live Log Stream" will update automatically.
