@@ -43,7 +43,6 @@ The Guardian SIEM system currently consists of two main Python scripts that work
 * **Web Dashboard (Flask & HTML/JS):** This hosts the web server and displays the `HTML_TEMPLATE` (your UI). It provides API endpoints that the JavaScript in your browser calls every few seconds to refresh the stats, agent list, and alerts.
 * **Pop-up & Agent List:** It shows real-time pop-ups for new alerts and displays all agents that have sent a log in the last 5 minutes.
 
----
 
 ## 🔧 How to Run (Beginner-Friendly Guide)
 
