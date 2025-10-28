@@ -35,48 +35,47 @@ app.config['SECRET_KEY'] = 'your_ai_secret_key'
 DB_NAME = 'logs.db'
 
 # --- Gemini AI Configuration ---
-# API key added as requested by the user.
 GEMINI_API_KEY = "AIzaSyBigGgQ50k6eVuHDT-VRWTVaECg8e-OQUU"
-GEMINI_MODEL_NAME = "gemini-1.5-flash-latest" # Using the latest flash model
+GEMINI_MODEL_NAME = "gemini-2.5-flash-preview-09-2025"
 
 if GEMINI_API_KEY != "YOUR_GOOGLE_AI_API_KEY" and GEMINI_API_KEY != "":
     try:
         genai.configure(api_key=GEMINI_API_KEY)
-        gemini_parser_model = genai.GenerativeModel(GEMINI_MODEL_NAME) # For simple query parsing
-        gemini_analyst_model = genai.GenerativeModel(GEMINI_MODEL_NAME) # For deep analysis
+        gemini_parser_model = genai.GenerativeModel(GEMINI_MODEL_NAME)
+        gemini_analyst_model = genai.GenerativeModel(GEMINI_MODEL_NAME)
         print(f"[DEBUG] Gemini AI Models '{GEMINI_MODEL_NAME}' configured successfully.")
     except Exception as e:
-        gemini_parser_model = None
-        gemini_analyst_model = None
+        gemini_parser_model = None; gemini_analyst_model = None
         print(f"\n[WARNING] Failed to configure Gemini AI. Error: {e}\n")
 else:
-    gemini_parser_model = None
-    gemini_analyst_model = None
+    gemini_parser_model = None; gemini_analyst_model = None
     print("\n[WARNING] Gemini API Key not configured. Advanced AI features disabled.\n")
+
+# --- NEW: AbuseIPDB API Configuration ---
+ABUSEIPDB_API_KEY = "0512eb3e1c8747f718013be43e3f8c3a3c13407dcd3987e5d32768daf22d2e3949711735883b9071" # Your API Key
+THREAT_INTEL_CACHE = {}
+threat_intel_lock = threading.Lock()
 
 # --- In-memory storage ---
 stats = {"total_events": 0, "successful_logins": 0, "failed_logins": 0, "app_errors": 0, "correlated_alerts": 0, "event_types": {}}
 stats_lock = threading.Lock()
-BLOCKED_IPS = set()
+BLOCKED_IPS = set() 
 RISK_REGISTER = {
     "R-001": {"description": "Unauthorized access via brute force attacks", "impact": "High", "likelihood": "Medium", "status": "Active", "related_alerts": []},
     "R-002": {"description": "Persistence through new local account creation", "impact": "High", "likelihood": "Low", "status": "Active", "related_alerts": []},
     "R-003": {"description": "Denial of Service through service termination", "impact": "Medium", "likelihood": "Low", "status": "Active", "related_alerts": []},
     "R-004": {"description": "Exploitation of known vulnerabilities (CVEs)", "impact": "High", "likelihood": "Medium", "status": "Active", "related_alerts": []},
-    "R-005": {"description": "Credential Access via Credential Manager", "impact": "High", "likelihood": "Low", "status": "Active", "related_alerts": []}, # Added Risk
+    "R-005": {"description": "Credential Access via Credential Manager", "impact": "High", "likelihood": "Low", "status": "Active", "related_alerts": []}, 
 }
 CORRELATED_ALERTS = []
 alert_lock = threading.Lock()
 GEOIP_CACHE = {} 
 geoip_lock = threading.Lock()
-DNS_CACHE = {} # --- NEW: Cache for DNS lookups ---
+DNS_CACHE = {} 
 dns_lock = threading.Lock()
 ACTIVE_AGENTS = {} 
 agents_lock = threading.Lock()
-# --- REMOVED: Queues are no longer needed ---
-# geoip_queue = queue.Queue()
-# dns_queue = queue.Queue()
-
+# --- REMOVED: Queues ---
 
 # --- Mappings ---
 WIN_EVENT_DESCRIPTIONS = {
@@ -85,37 +84,32 @@ WIN_EVENT_DESCRIPTIONS = {
     4798: "User's local group membership enumerated",
     4627: "Group membership information",
     4672: "Special privileges assigned to new logon",
-    5379: "Credential Manager credential read", # Added
+    5379: "Credential Manager credential read", 
     1000: "App Crash", 1001: "Windows Error Reporting",
     7034: "Service Stop Unexpectedly", 7036: "Service Started", 7040: "Service Start Type Changed",
-    6008: "Unexpected Shutdown",
-    6013: "System Uptime",
-    0: "Information" # Generic description for Event ID 0 often used by custom sources
+    6008: "Unexpected Shutdown", 6013: "System Uptime", 0: "Information" 
 }
 VULNERABLE_APPS_CVE = { "old_browser.exe": "CVE-2025-1234", "vulnerable_service.exe": "CVE-2025-5678", " risky_app.exe": "CVE-2024-9999" }
-
 MITRE_ATTACK_MAP = {
     "4625": {"id": "T1110.003", "name": "Brute Force: Password Spraying", "tactic": "Credential Access"},
     "4720": {"id": "T1136.001", "name": "Create Account: Local Account", "tactic": "Persistence"},
     "7034": {"id": "T1489", "name": "Service Stop", "tactic": "Impact"},
     "4798": {"id": "T1069.001", "name": "Permission Groups Discovery: Local Groups", "tactic": "Discovery"},
-    "5379": {"id": "T1555.004", "name": "Credentials from Password Stores: Windows Credential Manager", "tactic": "Credential Access", "risk_id": "R-005"}, # Added
+    "5379": {"id": "T1555.004", "name": "Credentials from Password Stores: Windows Credential Manager", "tactic": "Credential Access", "risk_id": "R-005"}, 
     "CORR-BRUTE-SUCCESS": {"id": "T1110", "name": "Brute Force", "tactic": "Credential Access", "risk_id": "R-001"},
     "CORR-NEW-USER-LOGIN": {"id": "T1136.001", "name": "Create Account: Local Account", "tactic": "Persistence", "risk_id": "R-002"},
 }
-
 MITRE_DEFEND_MAP = {
     "T1110.003": {"id": "D3-AL", "name": "Account Locking"},
     "T1136.001": {"id": "D3-AM", "name": "Account Monitoring"},
     "T1489": {"id": "D3-SFC", "name": "Service File-permission Check"},
     "T1110": {"id": "D3-MFA", "name": "Multi-Factor Authentication"},
     "T1069.001": {"id": "D3-PCA", "name": "Process Code Analysis"},
-    "T1555.004": {"id": "D3-CH", "name": "Credential Hoarding Mitigation"}, # Added example D3FEND
+    "T1555.004": {"id": "D3-CH", "name": "Credential Hoarding Mitigation"}, 
 }
 
-# --- NEW: No-Cache Decorator ---
+# --- No-Cache Decorator ---
 def nocache(view):
-    """Decorator to add cache-busting headers to API responses."""
     @wraps(view)
     def no_cache_impl(*args, **kwargs):
         response = make_response(view(*args, **kwargs))
@@ -125,13 +119,12 @@ def nocache(view):
         return response
     return no_cache_impl
 
-# --- GeoIP & DNS Functions ---
+# --- GeoIP, DNS, and Threat Intel Functions ---
 def is_internal_ip(ip_address):
     """Checks if an IP is internal/private."""
     if not ip_address or ip_address == '-' or ip_address == '127.0.0.1' or ip_address == '::1':
         return True
     try:
-        # Check against private IP ranges
         parts = ip_address.split('.')
         if len(parts) == 4:
             if parts[0] == '10': return True
@@ -139,7 +132,7 @@ def is_internal_ip(ip_address):
             if parts[0] == '172' and 16 <= int(parts[1]) <= 31: return True
         return False
     except:
-        return False # Not a standard IPv4
+        return False
 
 def get_geoip_data(ip_address):
     """Fetches GeoIP data for a public IP address, using a local cache."""
@@ -147,18 +140,12 @@ def get_geoip_data(ip_address):
     with geoip_lock:
         if ip_address in GEOIP_CACHE: return GEOIP_CACHE[ip_address]
     try:
-        # print(f"[GEOIP DEBUG] Fetching GeoIP for {ip_address}...") # Verbose
         url = f"http://ip-api.com/json/{ip_address}?fields=status,message,country,city,isp"
-        response = requests.get(url, timeout=2) # 2 second timeout
+        response = requests.get(url, timeout=2) 
         response.raise_for_status() 
         data = response.json()
         geo_info = f"{data.get('city', 'N/A')}, {data.get('country', 'N/A')} ({data.get('isp', 'N/A')})" if data.get('status') == 'success' else "GeoIP Lookup Failed"
-    except requests.exceptions.Timeout:
-        geo_info = "GeoIP Timeout"
-    except requests.exceptions.RequestException:
-        geo_info = "GeoIP Error"
-    except Exception as e: 
-        geo_info = f"GeoIP Unexpected Error: {e}"
+    except Exception as e: geo_info = "GeoIP Error"
     with geoip_lock: GEOIP_CACHE[ip_address] = geo_info
     return geo_info
 
@@ -168,13 +155,58 @@ def get_dns_name(ip_address):
     with dns_lock:
         if ip_address in DNS_CACHE: return DNS_CACHE[ip_address]
     try:
-        # print(f"[DNS DEBUG] Fetching DNS for {ip_address}...") # Verbose
         hostname, _, _ = socket.gethostbyaddr(ip_address)
         dns_info = str(hostname)
     except socket.herror: dns_info = "No PTR Record"
-    except Exception as e: dns_info = f"DNS Error" # Catch other errors like timeouts
+    except Exception as e: dns_info = f"DNS Error"
     with dns_lock: DNS_CACHE[ip_address] = dns_info
     return dns_info
+
+# --- NEW: AbuseIPDB Threat Intel Function ---
+def get_threat_intel_data(ip_address):
+    """Fetches threat intel from AbuseIPDB, using a local cache."""
+    if is_internal_ip(ip_address): return None, 0 # No score for internal IPs
+    
+    with threat_intel_lock:
+        if ip_address in THREAT_INTEL_CACHE:
+            return THREAT_INTEL_CACHE[ip_address]
+
+    if not ABUSEIPDB_API_KEY:
+        return "API Key Missing", 0
+
+    url = 'https://api.abuseipdb.com/api/v2/check'
+    params = {'ipAddress': ip_address, 'maxAgeInDays': '90'}
+    headers = {'Accept': 'application/json', 'Key': ABUSEIPDB_API_KEY}
+    
+    try:
+        # --- FIX: Added debug print ---
+        print(f"[THREAT INTEL DEBUG] Checking IP: {ip_address}")
+        response = requests.get(url, headers=headers, params=params, timeout=3)
+        response.raise_for_status()
+        data = response.json().get('data', {})
+        
+        score = data.get('abuseConfidenceScore', 0)
+        if score > 50: # Only report significant scores
+            report_count = data.get('totalReports', 0)
+            last_report_category = "N/A"
+            if data.get('lastReportedAt'):
+                 last_report_category = f"Category {data.get('reports', [{}])[0].get('categories', ['N/A'])[0]}"
+            
+            threat_info = f"Malicious ({score}%) - {report_count} Reports (Last: {last_report_category})"
+        else:
+            threat_info = "Not Reported"
+            
+    except requests.exceptions.Timeout:
+        threat_info = "Threat Intel Timeout"; score = 0
+    except requests.exceptions.RequestException as e:
+        threat_info = f"Threat Intel Error ({e.response.status_code if e.response else 'N/A'})"; score = 0
+    except Exception as e:
+        threat_info = "Threat Intel Error"; score = 0
+
+    result = (threat_info, score)
+    with threat_intel_lock: THREAT_INTEL_CACHE[ip_address] = result
+    return result
+
 
 # --- Database Functions ---
 def init_db():
@@ -202,13 +234,13 @@ def add_log_to_db(log, agent_id, agent_name):
     conn = None; log_id = None
     try:
         conn = sqlite3.connect(DB_NAME, check_same_thread=False); c = conn.cursor()
+        # --- FIX: Save the severity determined by parse_and_format_log ---
         c.execute("INSERT INTO logs (timestamp, log_type, description, details, severity, agent_id, agent_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (log.get('timestamp'), log.get('log_type'), log.get('description'), 
              json.dumps(log.get('details', {})), log.get('severity', 'INFO'),
              agent_id, agent_name))
         log_id = c.lastrowid
         conn.commit()
-        # print(f"[DB DEBUG] Inserted log {log_id}") # Verbose
     except sqlite3.Error as e: print(f"[DB ERROR] Failed to add log: {e}")
     finally:
         if conn: conn.close()
@@ -236,11 +268,26 @@ def add_correlated_alert_to_db(alert):
     finally:
         if conn: conn.close()
 
-def query_db(filters={}, limit=50):
+# --- FIX: Re-added get_time_range_ms and query_db_range ---
+def get_time_range_ms(range_str):
+    """Calculates start timestamp in milliseconds based on range string."""
+    now = datetime.now()
+    start_time = None
+    if range_str == '1h': start_time = now - timedelta(hours=1)
+    elif range_str == '24h': start_time = now - timedelta(days=1)
+    elif range_str == '7d': start_time = now - timedelta(days=7)
+    elif range_str == 'all': return 0
+    else: start_time = now - timedelta(days=1) # Default
+    return start_time.timestamp() * 1000 if start_time else 0
+
+def query_db_range(filters={}, limit=50, time_range_str='all'):
+    """Queries logs within a specific time range."""
     conn = None; results = []
+    start_timestamp_ms = get_time_range_ms(time_range_str)
     try:
         conn = sqlite3.connect(DB_NAME, check_same_thread=False); conn.row_factory = sqlite3.Row; c = conn.cursor()
         query = "SELECT * FROM logs"; conditions, params = [], []
+        if start_timestamp_ms > 0: conditions.append("timestamp >= ?"); params.append(start_timestamp_ms)
         if filters.get('agent_id'): conditions.append("agent_id = ?"); params.append(filters.get('agent_id'))
         if filters.get('description_like'): conditions.append("description LIKE ?"); params.append(f"%{filters.get('description_like')}%")
         if filters.get('username'): conditions.append("(details LIKE ? OR details LIKE ?)"); params.extend([f'%"Target User": "%{filters.get("username")}"%', f'%"Account Name": "%{filters.get("username")}"%'])
@@ -257,6 +304,10 @@ def query_db(filters={}, limit=50):
     finally:
         if conn: conn.close()
     return results
+
+def query_db(filters={}, limit=50):
+    """Simple query function, defaults to query_db_range with 'all' time."""
+    return query_db_range(filters=filters, limit=limit, time_range_str='all')
 
 # --- Correlation Engine (Unchanged) ---
 def correlation_engine():
@@ -335,43 +386,102 @@ def get_gemini_analysis(user_prompt, logs):
 
 def gemini_query_parser(user_prompt):
     if not gemini_parser_model: return {"error": "AI query parser not configured."}
+    # --- FIX: Updated prompt to include time_range_str ---
     system_prompt = """
     You are a query parsing AI. Convert the user's natural language prompt (in any language)
-    into a JSON object to query a log database.
-    Keys: "description_like", "username", "mitre_id", "cve_id", "time_range_str" (1h, 24h, 7d, all).
+    into a JSON object to query a log database or perform an action.
+    
+    Valid Actions:
+    - "action": "block" | "unblock"
+    - "ip_address": string
+    
+    Valid Query Keys:
+    - "description_like": string
+    - "username": string
+    - "mitre_id": string
+    - "cve_id": string
+    - "time_range_str": "1h" | "24h" | "7d" | "all"
+    
     Examples:
     User: "show me failed logins" -> {"description_like": "Failed Logon"}
     User: "failed logins from the last hour" -> {"description_like": "Failed Logon", "time_range_str": "1h"}
-    User: "লগইন ফেইলর গুলো দেখাও" -> {"description_like": "Failed Logon"}
+    User: "block 1.2.3.4" -> {"action": "block", "ip_address": "1.2.3.4"}
+    User: "8.8.8.8 কে ব্লক কর" -> {"action": "block", "ip_address": "8.8.8.8"}
+    User: "unblock 1.2.3.4" -> {"action": "unblock", "ip_address": "1.2.3.4"}
     User: "show logs for user 'Admin' in the last 7 days" -> {"username": "Admin", "time_range_str": "7d"}
-    If the prompt is analytical (e.g., "summarize threats"), respond with: ANALYZE
+    
+    If the prompt is analytical (e.g., "summarize threats", "what is the risk?"), respond with: ANALYZE
     Respond *only* with the JSON object or "ANALYZE".
     """
     full_prompt = f"User Prompt: \"{user_prompt}\""
     try:
-        # print(f"[AI PARSER DEBUG] Sending: {full_prompt}") # Verbose
         response = gemini_parser_model.generate_content([system_prompt, full_prompt], generation_config=genai.types.GenerationConfig(temperature=0.0))
         response_text = ""
         if response.candidates and response.candidates[0].content.parts: response_text = response.candidates[0].content.parts[0].text
         elif hasattr(response, 'text'): response_text = response.text
         else: raise Exception("Empty/blocked response")
         response_text = response_text.strip().replace("```json", "").replace("```", "")
-        # print(f"[AI PARSER DEBUG] Response: {response_text}") # Verbose
         if "ANALYZE" in response_text.upper(): return "ANALYZE"
         try: query_plan = json.loads(response_text); return query_plan if isinstance(query_plan, dict) else "ANALYZE"
-        except json.JSONDecodeError: return "ANALYZE" # Fallback
+        except json.JSONDecodeError: return "ANALYZE"
     except Exception as e: print(f"[ERROR] Gemini Query Parser failed: {e}"); return {"error": f"AI Parser Error: {e}"}
 
-def process_ai_prompt(prompt, agent_id=None): # Removed time_range context
-    # Step 1: Use AI to parse the user's intent
+# --- FIX: Re-added run_command function ---
+def run_command(command):
+    """Executes a shell command and returns success(bool) and output(str)."""
+    try:
+        # Using shell=True for netsh, be cautious with user-formatted commands
+        # We ensured IP is in a valid format, mitigating some risk.
+        result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True, encoding='utf-8')
+        return True, result.stdout
+    except subprocess.CalledProcessError as e:
+        print(f"[SOAR ERROR] Command failed: {e.stderr}")
+        return False, e.stderr
+    except Exception as e:
+        print(f"[SOAR ERROR] Unexpected error: {e}")
+        return False, str(e)
+
+# --- MODIFICATION: process_ai_prompt now handles 'action' ---
+def process_ai_prompt(prompt, agent_id=None):
     query_plan = gemini_query_parser(prompt)
     if isinstance(query_plan, dict) and "error" in query_plan: return {"response": query_plan['error'], "data": None}
 
+    # --- NEW: Handle SOAR Actions ---
+    if isinstance(query_plan, dict) and "action" in query_plan:
+        action = query_plan.get("action")
+        ip = query_plan.get("ip_address")
+        
+        if not ip or not re.match(r"^\d{1,3}(\.\d{1,3}){3}$", ip):
+             return {"response": f"Invalid IP address provided for action: {ip}", "data": None}
+
+        if action == "block":
+            print(f"[SOAR ACTION] Attempting to block IP: {ip}")
+            rule_name = f"SIEM_Block_{ip}"
+            command = f"netsh advfirewall firewall add rule name=\"{rule_name}\" dir=in action=block remoteip={ip}"
+            success, output = run_command(command)
+            if success:
+                BLOCKED_IPS.add(ip)
+                return {"response": f"Successfully created firewall rule to block IP: {ip}", "data": None}
+            else:
+                return {"response": f"Failed to block IP. Error (Run as Admin?): {output}", "data": None}
+        
+        elif action == "unblock":
+            print(f"[SOAR ACTION] Attempting to unblock IP: {ip}")
+            rule_name = f"SIEM_Block_{ip}"
+            command = f"netsh advfirewall firewall delete rule name=\"{rule_name}\""
+            success, output = run_command(command)
+            if success:
+                if ip in BLOCKED_IPS: BLOCKED_IPS.remove(ip)
+                return {"response": f"Successfully removed firewall rule for IP: {ip}", "data": None}
+            else:
+                return {"response": f"Failed to unblock IP. Error (Rule exists?): {output}", "data": None}
+    
+    # --- Handle ANALYZE and QUERY intents ---
+    # --- FIX: Use AI-parsed time range, default to 'all' ---
     time_range = 'all' # Default
     if isinstance(query_plan, dict) and 'time_range_str' in query_plan:
-        time_range = query_plan.pop('time_range_str')
-
-    # Step 2: Handle "ANALYZE" intent
+        time_range = query_plan.pop('time_range_str') # Extract time range if AI found one
+        
     if query_plan == "ANALYZE":
         print(f"[AI DEBUG] Intent 'ANALYZE'. Fetching logs (Agent: {agent_id or 'All'}, Range: {time_range}).")
         filters = {}
@@ -381,12 +491,11 @@ def process_ai_prompt(prompt, agent_id=None): # Removed time_range context
         ai_response = get_gemini_analysis(prompt, logs_for_analysis)
         return {"response": ai_response, "data": None}
 
-    # Step 3: Handle "QUERY" intent
     if isinstance(query_plan, dict):
         if agent_id: query_plan['agent_id'] = agent_id
         limit = 100
         print(f"[AI DEBUG] Intent 'QUERY'. Executing: {query_plan} (Agent: {agent_id or 'All'}, Range: {time_range})")
-        logs = query_db_range(query_plan, limit=limit, time_range_str=time_range)
+        logs = query_db_range(query_plan, limit=limit, time_range_str=time_range) # --- FIX: Call query_db_range ---
         response_text = f"Found {len(logs)} log(s) for your query (Range: {time_range}, Agent: {agent_id or 'All'})."
         return {"response": response_text, "data": logs}
 
@@ -454,19 +563,30 @@ def parse_and_format_log(log, agent_id="unknown"): # Accept agent_id
         if target_user: details['Target User'] = target_user
         
         source_ip = data_fields.get('IpAddress') or data_fields.get('Client Address')
+        severity = "WARNING" if event_id in [1000, 4625, 4720, 7034, 5379] else "INFO"
+        
         if source_ip and source_ip not in ['::1', '-', '127.0.0.1']:
              details['Source IP'] = source_ip
-             # --- MODIFICATION: Call GeoIP and DNS functions directly ---
              if not is_internal_ip(source_ip):
+                 # --- MODIFICATION: Call enrichment functions directly ---
                  details['Geo-Location'] = get_geoip_data(source_ip)
                  details['Hostname'] = get_dns_name(source_ip)
+                 threat_info, score = get_threat_intel_data(source_ip)
+                 # --- FIX: Always add threat intel info ---
+                 if score > 50:
+                     details['Threat Intel'] = threat_info
+                     severity = "CRITICAL"
+                 elif "Error" not in threat_info and "Timeout" not in threat_info and "Missing" not in threat_info:
+                     details['Threat Intel'] = "Not Reported"
+        
+        if source_ip in BLOCKED_IPS: severity = "CRITICAL"
         
         event_id_str = str(event_id)
         if event_id is not None and event_id_str in MITRE_ATTACK_MAP: details["MITRE ATT&CK"] = f"{MITRE_ATTACK_MAP[event_id_str]['id']}: {MITRE_ATTACK_MAP[event_id_str]['name']}"
         log_message = log.get('message', '').lower()
         for app, cve in VULNERABLE_APPS_CVE.items():
             if app.lower() in json.dumps(details).lower() or app.lower() in log_message: details["CVE"] = cve
-        severity = "WARNING" if event_id in [1000, 4625, 4720, 7034, 5379] else "INFO"
+            
         description = WIN_EVENT_DESCRIPTIONS.get(event_id, f"{primary_type} Event ID {event_id}")
         return {"log_type": f"{primary_type} Event", "event_id_internal": event_id, "description": description, "details": details, "timestamp": timestamp, "severity": severity}
     
@@ -478,10 +598,22 @@ def parse_and_format_log(log, agent_id="unknown"): # Accept agent_id
         if source_ip and not is_internal_ip(source_ip):
              details['Source Geo'] = get_geoip_data(source_ip)
              details['Source Hostname'] = get_dns_name(source_ip)
+             threat_info, score = get_threat_intel_data(source_ip)
+             if score > 50: 
+                 details['Threat Intel (Source)'] = threat_info; severity = "CRITICAL"
+             elif "Error" not in threat_info:
+                 details['Threat Intel (Source)'] = "Not Reported"
+
         dest_ip = log.get('dest_ip')
         if dest_ip and not is_internal_ip(dest_ip):
              details['Destination Geo'] = get_geoip_data(dest_ip)
              details['Destination Hostname'] = get_dns_name(dest_ip)
+             # --- FIX: Check threat intel for destination IP as well ---
+             threat_info_dst, score_dst = get_threat_intel_data(dest_ip)
+             if score_dst > 50: 
+                 details['Threat Intel (Dest)'] = threat_info_dst; severity = "CRITICAL"
+             elif "Error" not in threat_info_dst:
+                 details['Threat Intel (Dest)'] = "Not Reported"
 
         return {"log_type": "Network Traffic", "event_id_internal": None, "description": desc, "severity": severity, "details": details, "timestamp": timestamp}
     else: details={}; details['RawMessage']=log.get('message','N/A'); event_id=log.get('event_id'); return {"log_type": "Other Event", "event_id_internal": event_id, "description": f"Source: {original_source_for_details}, Event: {event_id}", "details": details, "timestamp": timestamp, "severity": "INFO"}
@@ -502,12 +634,17 @@ def packet_handler(packet):
 
 def start_sniffing():
     print("Starting network sniffer...");
-    try: sniff(prn=packet_handler, store=0)
-    except Exception as e: print(f"[ERROR] Sniffer failed: {e}.")
+    try:
+        sniff(iface="Wi-Fi", prn=packet_handler, store=0)
+    except Exception as e: 
+        print(f"[ERROR] Sniffer failed: {e}.")
+        print("[ERROR] Could not find interface 'Wi-Fi'. Trying default...")
+        try:
+            sniff(prn=packet_handler, store=0)
+        except Exception as e2:
+             print(f"[ERROR] Default sniffer also failed: {e2}.")
 
 # --- REMOVED: GeoIP and DNS Worker Thread Functions ---
-# def geoip_enricher_thread(): ...
-# def dns_enricher_thread(): ...
 
 
 # --- Flask Web Application Routes ---
@@ -538,7 +675,9 @@ HTML_TEMPLATE = """
         .alert-entry { border: 1px solid var(--header); background-color: #3b1f2b; }
         .alert-title { font-weight: bold; color: var(--header); }
         .mitre-link, .cve-link { color: #5dade2; text-decoration: none; font-weight: 500; }
-        .log-entry b.geo-location, .log-entry b.hostname { color: var(--accent); } /* --- Style for GeoIP & DNS --- */
+        /* --- MODIFIED: Added Threat Intel style --- */
+        .log-entry b.geo-location, .log-entry b.hostname { color: var(--accent); }
+        .log-entry b.threat-intel { color: var(--warn); font-weight: bold; }
         .risk-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.85em; }
         .risk-table th, .risk-table td { padding: 6px; border: 1px solid #566573; text-align: left; }
         .risk-table th { background-color: #46627f; }
@@ -579,7 +718,7 @@ HTML_TEMPLATE = """
             <div class="agent-container card">
                 <h2>Gemini AI Analyst</h2>
                 <div style="display:flex;">
-                    <input type="text" id="agent-prompt" placeholder="e.g., show failed logins last hour">
+                    <input type="text" id="agent-prompt" placeholder="e.g., block 8.8.8.8">
                     <button onclick="submitPrompt()">Ask</button>
                 </div>
                 <div id="agent-response-area">Awaiting command...</div>
@@ -647,6 +786,8 @@ HTML_TEMPLATE = """
                             else if (key === "CVE") { val_str = `<a href="https://nvd.nist.gov/vuln/detail/${value}" target="_blank" class="cve-link">${value}</a>`; }
                         }
                         if (key.includes("Geo") || key.includes("Hostname")) { keyClass = 'class="geo-location"'; }
+                        if (key.includes("Threat Intel")) { keyClass = 'class="threat-intel"'; }
+                        
                         const displayKey = key.replace('UserName',' User').replace('IpAddress', 'IP');
                         if(key !== 'event_id_internal' && val_str !== null && val_str !== undefined && val_str !== '') {
                            detailsHtml += `<b ${keyClass}>${displayKey}:</b> ${val_str}<br>`;
@@ -837,6 +978,7 @@ def index():
          return "<h1>Internal Server Error</h1>", 500
 
 @app.route('/api/agent', methods=['POST'])
+@nocache
 def handle_agent_prompt():
     prompt = request.json.get('prompt')
     agent_id = request.json.get('agent_id')
@@ -848,6 +990,7 @@ def handle_agent_prompt():
     except Exception as e: print(f"[ERROR] Agent prompt: {e}"); traceback.print_exc(); return jsonify({"response": f"Error: {e}", "data": None}), 500
 
 @app.route('/api/logs', methods=['POST'])
+@nocache
 def receive_logs():
     try:
         data = request.json
@@ -869,9 +1012,8 @@ def receive_logs():
              if not isinstance(log, dict): continue
              formatted = parse_and_format_log(log, agent_id=agent_id)
              if formatted:
+                 # --- MODIFICATION: No GeoIP queueing here, it's done in parse_and_format_log ---
                  log_id = add_log_to_db(formatted, agent_id, agent_name)
-                 # --- FIX: No GeoIP queueing here, it's done in parse_and_format_log ---
-                 # --- REVERTED: Call update_stats_from_log ---
                  update_stats_from_log(formatted)
                  count += 1
         return jsonify({"status": "success", "processed": count})
@@ -905,7 +1047,6 @@ def get_latest_logs():
 def get_correlated_alerts():
     agent_id = request.args.get('agent_id', None)
     try:
-        # Query DB for alerts
         conn = sqlite3.connect(DB_NAME, check_same_thread=False); conn.row_factory = sqlite3.Row; c = conn.cursor()
         query = "SELECT * FROM correlated_alerts"; conditions, params = [], []
         if agent_id: conditions.append("agent_id = ?"); params.append(agent_id)
@@ -938,7 +1079,6 @@ def get_stats():
             labels = list(current_event_types.keys())
             data = list(current_event_types.values())
             
-            # Recalculate correlated alerts count from DB for accuracy
             conn = None
             try:
                  conn = sqlite3.connect(DB_NAME, check_same_thread=False); c = conn.cursor()
