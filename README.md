@@ -1,8 +1,33 @@
 # 🛡️ Guardian SIEM - Project Report & Setup Guide
 
-**Date:** October 22, 2025  
-**Author:** Touhiduzzaman Eshan  
+## 🌟 Project Overview
+**Project Supervisor:** N.M.I. Raisul Bari  
+**Development Team:** Nabila, Md. Tanjim Mahmud Tuhin, Touhiduzzaman Eshan  
 
+
+## 1. 🔑 Key Features and Differentiators
+
+| **Feature** | **Description** | **Status** |
+|--------------|-----------------|-------------|
+| **AI SOAR Engine** | Uses Google Gemini to execute direct remediation actions (IP blocking/unblocking) based on natural language queries. | ✅ Implemented |
+| **Asynchronous Processing** | Prevents server crashes by running slow GeoIP/Threat Intel lookups in background worker threads, ensuring fast log ingestion. | ✅ Implemented |
+| **Threat Enrichment** | Adds GeoIP location, DNS Hostname, and AbuseIPDB Threat Intelligence context to every external IP log. | ✅ Implemented |
+| **SNMP Agent** | A dedicated agent (`snmp_agent.py`) polls MikroTik CHR or any SNMP-enabled device for live Uptime and Traffic metrics. | ✅ Implemented |
+| **Brute Force Correlation** | Checks for the 3x Failed Login (4625) followed by 1x Successful Login (4624) pattern every 30 seconds. | ✅ Implemented |
+
+---
+
+## 2. 🧩 System Architecture
+
+The SIEM operates on a **decoupled architecture** for maximum stability:
+
+| **Component** | **Role in the System** | **Files** |
+|----------------|------------------------|------------|
+| **Central Server (The Brain)** | Receives logs, manages DB, hosts Web UI, runs Correlation & SOAR engine. | `soc_dashboard.py` |
+| **Windows Agent** | Reads Security, Application, and System logs from the host PC. | `agent.py` |
+| **SNMP Agent** | Polls MikroTik/Router for metrics (Traffic, Uptime) and sends them to the server. | `snmp_agent.py` |
+
+---
 ---
 
 ## 🎯 Project Goal
