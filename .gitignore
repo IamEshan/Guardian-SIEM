@@ -1,0 +1,12 @@
+logs.db
+venv/
+__pycache__/
+
+# Windows generated files
+*.exe
+*.dll
+*.pyd
+*.pyc
+
+# Python specific folders
+.pytest_cache/
