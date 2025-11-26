@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Guardian SIEM - Live Log Stream</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    
+    <style>
+        /* SOC Dark Theme Styling (Must be repeated here) */
+        :root { --bg: #2c3e50; --text: #ecf0f1; --header: #e74c3c; --card-bg: #34495e; --log-bg: #46627f; --input-bg: #5dade2; --nav-bg: #22303f; --accent: #1abc9c; --warn: #f39c12; --crit: #e74c3c; --profile-bg: #22303f; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: var(--bg); color: var(--text); font-size: 14px; }
+        
+        /* Log Stream Specific Styles */
+        .log-stream-container { 
+            height: calc(100vh - 50px); /* Adjust height to fill the window below the header */
+            overflow-y: scroll; 
+            padding: 15px; 
+        }
+        .log-entry { 
+            padding: 8px; margin-bottom: 6px; 
+            background-color: var(--log-bg); 
+            border-radius: 4px; font-size: 0.85em; 
+            border-left: 4px solid transparent; 
+            word-wrap: break-word; 
+        }
+        .severity-INFO { border-left-color: #3498db; }
+        .severity-WARNING { border-left-color: var(--warn); background-color: #443e37; }
+        .severity-CRITICAL { border-left-color: var(--crit); background-color: #5d333f; }
+        .log-entry b.geo-location, .log-entry b.hostname { color: var(--accent); }
+        .log-entry b.threat-intel { color: var(--warn); font-weight: bold; }
+        .mitre-link, .cve-link { color: #5dade2; text-decoration: none; font-weight: 500; }
+
+        .log-header { 
+            background-color: var(--nav-bg); 
+            padding: 10px 15px; 
+            border-bottom: 2px solid var(--header); 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .log-header h2 { margin: 0; color: var(--accent); font-size: 1.2em;}
+        .log-header button { 
+            background-color: var(--crit); 
+            color: var(--text); border: none; 
+            padding: 5px 10px; cursor: pointer; 
+            border-radius: 5px; 
+            transition: background-color 0.2s;
+        }
+        .log-header button:hover {
+            background-color: #ff6347;
+        }
+
+        ::-webkit-scrollbar { width: 6px; } 
+        ::-webkit-scrollbar-track { background: var(--card-bg); } 
+        ::-webkit-scrollbar-thumb { background: #566573; } 
+        ::-webkit-scrollbar-thumb:hover { background: #6c7a89; }
+    </style>
+</head>
+<body>
+    <div class="log-header">
+        <h2>Live Log Stream <span id="log-stream-agent" style="color: var(--warn); font-size: 0.8em;">(All Agents)</span></h2>
+        <button onclick="window.close()"><i class="fas fa-times"></i> Close</button>
+    </div>
+    <div id="log-stream" class="log-stream-container">
+        <p>Waiting for logs...</p>
+    </div>
+
+    <script>
+        // Global variables and the full renderLogs function must be defined here
+        let currentAgentFilter = null; 
+        
+        // Try to get MITRE_ATTACK_MAP from the main window, otherwise use an empty object
+        const MITRE_ATTACK_MAP_JS = window.opener && window.opener.MITRE_ATTACK_MAP_JS ? window.opener.MITRE_ATTACK_MAP_JS : {};
+        
+        // --- LOG RENDERING FUNCTION (MOVED FROM MAIN DASHBOARD) ---
+        function renderLogs(logs, containerId='log-stream') {
+            const container = document.getElementById(containerId);
+            if (!logs || !Array.isArray(logs) || !container) { 
+                console.error("Invalid logs data or container not found."); 
+                return; 
+            }
+            
+            // This is the main stream now, so we prepend new logs
+            const isMainStream = true; 
+
+            if (logs.length === 0) {
+                 if(container.innerHTML.includes('Waiting')) return;
+                 container.innerHTML = `<p>No logs found for this query.</p>`;
+                 return;
+            }
+
+            if (container.innerHTML.includes('Waiting for logs...') || container.innerHTML.includes('No logs found')) {
+                 container.innerHTML = '';
+            }
+
+            const fragment = document.createDocumentFragment();
+            logs.forEach(log => {
+                const entry = document.createElement('div');
+                const severity = log.severity || 'INFO';
+                entry.className = `log-entry severity-${severity}`;
+                let detailsHtml = '';
+                if (log.details && typeof log.details === 'object') {
+                    for (const [key, value] of Object.entries(log.details)) {
+                        let val_str = value;
+                        val_str = typeof val_str === 'string' ? val_str.replace(/</g, "&lt;").replace(/>/g, "&gt;") : val_str;
+                        let keyClass = '';
+                        if (value && typeof value === 'string') {
+                            // Check for MITRE/CVE links
+                            if (key === "MITRE ATT&CK") { 
+                                const match = value.match(/^(T\d{4}(\.\d{3})?):\s*(.*)/); 
+                                if (match) val_str = `<a href="https://attack.mitre.org/techniques/${match[1].replace('.','/')}" target="_blank" class="mitre-link">${value}</a>`; 
+                            }
+                            else if (key === "CVE") { 
+                                val_str = `<a href="https://nvd.nist.gov/vuln/detail/${value}" target="_blank" class="cve-link">${value}</a>`; 
+                            }
+                        }
+                        if (key.includes("Geo") || key.includes("Hostname")) { keyClass = 'class="geo-location"'; }
+                        if (key.includes("Threat Intel") || key.includes("Risk")) { keyClass = 'class="threat-intel"'; }
+                        
+                        const displayKey = key.replace('UserName',' User').replace('IpAddress', 'IP').replace('CORR_GEO_RISK','Geo Risk Flag');
+                        if(key !== 'event_id_internal' && val_str !== null && val_str !== undefined && val_str !== '') {
+                            detailsHtml += `<b ${keyClass}>${displayKey}:</b> ${val_str}<br>`;
+                        }
+                    }
+                } else { detailsHtml = `<b>Details:</b> ${JSON.stringify(log.details)}<br>`; }
+                entry.innerHTML = `<b>${log.description || 'Log Event'}</b> <small>(${new Date(log.timestamp).toLocaleTimeString()})</small><br>${detailsHtml}`;
+                fragment.prepend(entry);
+            });
+            
+            container.prepend(fragment);
+            // Maintain a reasonable log count (300 entries max)
+            while (container.children.length > 300) { container.removeChild(container.lastChild); }
+        }
+
+        // --- FETCH LOGS FUNCTION FOR INTERVAL ---
+        function fetchLogsFromOpener() {
+            if (window.opener && window.opener.fetchLogs) {
+                // Call the fetchLogs function from the main dashboard, passing this window as the target
+                window.opener.fetchLogs(currentAgentFilter, window);
+            }
+        }
+        
+        // --- INITIALIZATION ---
+        window.onload = () => {
+            // Check the opener for the current agent filter state
+            if (window.opener && window.opener.currentAgentFilter !== undefined) {
+                 currentAgentFilter = window.opener.currentAgentFilter;
+                 // Sync the header text
+                 const logStreamAgentSpan = window.opener.document.getElementById('log-stream-agent');
+                 if (logStreamAgentSpan) {
+                     const agentName = logStreamAgentSpan.innerText.replace(/[()]/g, '');
+                     document.getElementById('log-stream-agent').innerText = agentName;
+                 }
+            }
+
+            // Start the polling interval for the logs in this new window
+            setInterval(fetchLogsFromOpener, 5000); // Poll every 5 seconds
+            
+            // Initial log fetch
+            fetchLogsFromOpener();
+        };
+    </script>
+</body>
+</html>

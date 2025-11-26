@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guardian SOC Login</title> 
+    <style>
+        /* Professional SOC Terminal Theme */
+        :root {
+            --dark-bg: #0a0a0a;
+            --login-box: #1a1a1a;
+            --primary-green: #00ff00;
+            --primary-shadow: rgba(0, 255, 0, 0.4);
+            --input-border: #007f00;
+            --error-color: #ff4d4d;
+        }
+
+        body { 
+            font-family: 'Consolas', monospace, sans-serif; 
+            background-color: var(--dark-bg); 
+            color: #ffffff; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            margin: 0; 
+            flex-direction: column;
+        }
+        
+        .login-box { 
+            background: var(--login-box); 
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 0 30px var(--primary-shadow);
+            width: 350px; 
+            text-align: center; 
+            border: 2px solid var(--primary-green);
+        }
+        
+        h2 { 
+            color: var(--primary-green); 
+            margin-bottom: 25px; 
+            font-size: 1.8em;
+            letter-spacing: 2px;
+            border-bottom: 2px solid var(--primary-green);
+            padding-bottom: 10px;
+        }
+        
+        /* Typing Animation Styles */
+        #terminal-message {
+            font-size: 1.1em;
+            color: var(--primary-green);
+            min-height: 50px; /* Ensure space for text */
+            text-align: left;
+            margin-bottom: 30px;
+            border-left: 2px solid var(--primary-green);
+            padding-left: 10px;
+            white-space: pre; /* Essential for typing effect */
+            overflow: hidden;
+        }
+        
+        .cursor {
+            font-weight: bold;
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            from, to { color: transparent }
+            50% { color: var(--primary-green) }
+        }
+
+        /* Form and Input Styles */
+        input[type="text"], input[type="password"] { 
+            width: calc(100% - 22px); 
+            padding: 12px 10px; 
+            margin-bottom: 18px; 
+            border: 1px solid var(--input-border); 
+            background: #2a2a2a; 
+            color: #ffffff; 
+            border-radius: 6px; 
+            transition: border-color 0.3s, box-shadow 0.3s;
+            font-size: 1em;
+        }
+        
+        input[type="text"]:focus, input[type="password"]:focus {
+            border-color: var(--primary-green);
+            box-shadow: 0 0 5px var(--primary-shadow);
+            outline: none;
+        }
+        
+        input[type="submit"] { 
+            width: 100%; 
+            padding: 12px; 
+            background-color: var(--primary-green); 
+            border: none; 
+            color: var(--dark-bg); /* Dark text on bright button */
+            font-weight: bold; 
+            cursor: pointer; 
+            border-radius: 6px; 
+            font-size: 1.1em;
+            transition: background-color 0.2s, transform 0.1s; 
+        }
+        
+        input[type="submit"]:hover { 
+            background-color: #00cd00; 
+            transform: translateY(-1px);
+        }
+        
+        .error { 
+            color: var(--error-color); 
+            margin-bottom: 20px; 
+            font-weight: 500; 
+            padding: 10px;
+            background: rgba(255, 77, 77, 0.1);
+            border: 1px solid var(--error-color);
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h2>SOC Access Terminal</h2>
+        
+        <div id="terminal-message">
+            <span id="typed-text"></span><span class="cursor">_</span>
+        </div>
+
+        {% if error %}
+            <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" id="login-form" style="display:none;">
+            <input type="text" name="username" placeholder="Username" required>
+            <input type="password" name="password" placeholder="Password" required>
+            <input type="submit" value="Authenticate & Proceed">
+        </form>
+    </div>
+
+    <script>
+        const messageArea = document.getElementById('typed-text');
+        const loginForm = document.getElementById('login-form');
+        const message = 
+`[SYSTEM] Initializing Guardian SIEM Terminal...
+[STATUS] Checking Security Protocols... OK
+[NOTICE] Access granted to designated SOC personnel only.
+[PROMPT] Enter Credentials to authorize session:`;
+        let i = 0;
+        
+        function typingEffect() {
+            if (i < message.length) {
+                // Ensure line breaks are rendered correctly
+                if (message.charAt(i) === '\n') {
+                    messageArea.innerHTML += '<br>';
+                } else {
+                    messageArea.innerHTML += message.charAt(i);
+                }
+                i++;
+                // Slower speed for more dramatic effect
+                setTimeout(typingEffect, 30); 
+            } else {
+                // Once typing is complete, show the login form
+                const cursor = document.querySelector('.cursor');
+                if (cursor) cursor.style.display = 'none';
+                loginForm.style.display = 'block';
+            }
+        }
+
+        // Start the typing effect when the page loads
+        document.addEventListener('DOMContentLoaded', typingEffect);
+    </script>
+</body>
+</html>

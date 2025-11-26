@@ -1,19 +1,21 @@
 import time
 import requests
 import json
-import win32evtlog # Requires pywin32
+import win32evtlog 
 import win32evtlogutil
-import traceback # For detailed error logging
-import os # Added for admin check
-import ctypes # Added for admin check
+import traceback 
+import os 
+import ctypes 
 import threading
 from datetime import datetime
-import pywintypes # Import pywintypes to catch specific exceptions
+import pywintypes 
 import uuid 
+import sys 
 
 # --- Configuration ---
+# Generate a unique ID based on the machine's MAC address
 AGENT_ID = f"agent-mac-{str(uuid.getnode())}" 
-AGENT_NAME = "My-Desktop-PC" # You can still customize this name
+AGENT_NAME = "My-Desktop-PC" 
 SERVER_URL = "http://127.0.0.1:5000/api/logs"
 LOG_SOURCES_TO_MONITOR = ["Security", "Application", "System"]
 POLL_INTERVAL = 10
@@ -29,6 +31,14 @@ ERROR_NO_MORE_ITEMS = 18
 ERROR_INVALID_PARAMETER = 87
 RPC_S_SERVER_UNAVAILABLE = 1722
 
+# --- NEW: Session Trust Tracking STATE (Minimalist version for agent) ---
+CRITICAL_USERS = {"Admin", "FinanceMgr", "DBAdmin", "HP"} 
+ACTIVE_SESSIONS = {} 
+session_lock = threading.Lock() 
+
+# ----------------------------------------------------------------------
+# Core Event Processing Functions
+# ----------------------------------------------------------------------
 
 def get_event_details(event):
     """Extracts relevant details from a PyEventLogRecord object."""
@@ -36,30 +46,37 @@ def get_event_details(event):
     record_num = getattr(event, 'RecordNumber', 'N/A')
     log_type = getattr(event, 'LogFile', 'Unknown')
     try:
+        # Event ID and System Info
         event_id = event.EventID & 0xFFFF
         computer_name = str(event.ComputerName)
+        log_source_name = str(event.SourceName)
+        
+        # Timestamp conversion
         try:
             timestamp = event.TimeGenerated.isoformat()
         except ValueError:
             timestamp = datetime.utcnow().isoformat() + "Z (fallback)"
-        log_source_name = str(event.SourceName)
 
+        # Message Formatting
         try:
             message = win32evtlogutil.SafeFormatMessage(event, log_source_name)
             message = ' '.join(message.split())
         except pywintypes.error as msg_err:
-             message = f"Event ID {event_id} (Message formatting failed)"
+             message = f"Event ID {event_id} (Message formatting failed: WinError {msg_err.winerror})"
              if event.StringInserts: message += " - Data available"
         except Exception as e_msg_fmt:
             message = f"Event ID {event_id} (Unexpected error formatting message)"
             print(f"[{log_type}] Error formatting message for record {record_num}: {e_msg_fmt}")
 
+        # Data Field Extraction (Normalization)
         data_fields = {}
         if event.StringInserts:
             strings = [str(s).strip() if s is not None else '' for s in event.StringInserts]
+            
+            # --- CRITICAL LOGON FIX: Ensure correct indexing for common events ---
             if event_id == 4624: # Successful Logon
                 data_fields['SubjectUserName'] = strings[1] if len(strings) > 1 else 'N/A'
-                data_fields['TargetUserName'] = strings[5] if len(strings) > 5 else 'N/A'
+                data_fields['TargetUserName'] = strings[5] if len(strings) > 5 else 'N/A' # <--- USERNAME
                 data_fields['Logon Type'] = strings[8] if len(strings) > 8 else 'N/A'
                 data_fields['IpAddress'] = strings[18] if len(strings) > 18 else 'N/A'
             elif event_id == 4625: # Failed Logon
@@ -72,9 +89,8 @@ def get_event_details(event):
                  data_fields['SubjectUserName'] = strings[4] if len(strings) > 4 else 'N/A'
             else: # Generic fallback
                 for i, field_val in enumerate(strings):
-                    display_val = field_val
-                    if len(display_val) > 500: display_val = display_val[:500] + "..."
-                    data_fields[f'Field_{i+1}'] = display_val
+                    if len(field_val) > 500: field_val = field_val[:500] + "..."
+                    data_fields[f'Field_{i+1}'] = field_val
 
         return {
             "record_number": record_num,
@@ -90,37 +106,27 @@ def get_event_details(event):
         traceback.print_exc()
         return None
 
-# --- ================================================================== ---
-# --- *** NEW ROBUST FUNCTIONS TO HANDLE LOG CLEARS/WRAPS *** ---
-# --- ================================================================== ---
+# ----------------------------------------------------------------------
+# Robust Log Reading and Re-Sync Functions
+# ----------------------------------------------------------------------
 
 def get_newest_record_num(handle, log_type):
     """
     Safely gets the record number of the absolute newest event in the log.
+    (Most reliable method: Oldest + Total - 1)
     """
     try:
-        # Use BACKWARDS_READ | SEQUENTIAL_READ and offset 0 to get the single newest event
-        flags_newest = win32evtlog.EVENTLOG_BACKWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
-        events = win32evtlog.ReadEventLog(handle, flags_newest, 0)
-        if events:
-            return events[0].RecordNumber
-    except Exception as e:
-        print(f"[{log_type}] Warning: Could not get newest record num via backwards read: {e}")
-    
-    # Fallback: get total count and oldest record
-    try:
         total = win32evtlog.GetNumberOfEventLogRecords(handle)
+        if total == 0:
+            return 0 
         oldest = win32evtlog.GetOldestEventLogRecord(handle)
-        if total > 0:
-            return (oldest + total - 1)
-        else:
-            return 0 # Log is empty
-    except Exception as e_fallback:
-        print(f"[{log_type}] Error in fallback get_newest_record_num: {e_fallback}")
-        return 0 # Absolute fallback
+        return (oldest + total - 1)
+    except Exception as e:
+        print(f"[{log_type}] Error in get_newest_record_num: {e}")
+        return 0 
 
 def initialize_last_records():
-    """Reads the current number of records in each log to start monitoring from the end."""
+    """Reads the current record number in each log to start monitoring from the end."""
     print("Initializing start positions for log monitors...")
     print(f"--- This Agent ID: {AGENT_ID} (Name: {AGENT_NAME}) ---")
     for source in LOG_SOURCES_TO_MONITOR:
@@ -128,15 +134,10 @@ def initialize_last_records():
         start_record = 0
         try:
             handle = win32evtlog.OpenEventLog(None, source)
-            total_records = win32evtlog.GetNumberOfEventLogRecords(handle)
-            if total_records > 0:
-                # Get the record number of the newest event
-                start_record = get_newest_record_num(handle, source)
-            else: 
-                start_record = 0 # Log is empty
+            start_record = get_newest_record_num(handle, source)
         except Exception as e_init_open:
             print(f"Could not open/read '{source}' during init: {e_init_open}. Starting from record 0.")
-            start_record = 0 # Fallback
+            start_record = 0 
         finally:
              if handle:
                  try: win32evtlog.CloseEventLog(handle)
@@ -148,87 +149,81 @@ def initialize_last_records():
 
 def fetch_new_events(server, log_type, last_record_number):
     """
-    Reads new events reliably, handling wraps and seeking errors.
-    This version automatically re-syncs if the log is cleared.
+    Reads new events reliably by ensuring the handle is always valid and 
+    automatically re-syncing if the log is cleared.
     """
     handle = None
     events_read_list = []
     highest_record_read = last_record_number
+    log_was_cleared = False
     
     try:
+        # --- 1. Open new handle every cycle (FIX for 'Invalid Handle') ---
         handle = win32evtlog.OpenEventLog(server, log_type)
-        total_records = win32evtlog.GetNumberOfEventLogRecords(handle)
         
-        if total_records == 0:
-            # Log is empty, nothing to do.
-            win32evtlog.CloseEventLog(handle)
-            return [], 0 # Reset to 0
-
-        # --- Check if there are any new records at all ---
+        # --- 2. Check current status and re-sync if needed ---
         newest_available_record = get_newest_record_num(handle, log_type)
-        if last_record_number >= newest_available_record:
-            win32evtlog.CloseEventLog(handle)
-            return [], last_record_number # No new logs
+        oldest_available_record = win32evtlog.GetOldestEventLogRecord(handle)
+        
+        if newest_available_record <= last_record_number:
+            # No new logs or log is empty
+            return [], last_record_number 
 
-        # --- We have new logs, try to read them ---
+        if last_record_number < oldest_available_record:
+            # Log was cleared OR wrapped and our last record number is now gone!
+            log_was_cleared = True
+            last_record_number = oldest_available_record - 1 # Reset to start reading from oldest
+            print(f"[{log_type}] Log reset/wrapped detected. Re-syncing from record {oldest_available_record}.")
+
+        # --- 3. Start reading from the calculated position ---
         flags_seek = win32evtlog.EVENTLOG_FORWARDS_READ | win32evtlog.EVENTLOG_SEEK_READ
         read_from_record = last_record_number + 1
+        events = None
         
         try:
             events = win32evtlog.ReadEventLog(handle, flags_seek, read_from_record)
-        
         except win32evtlog.error as e_seek:
-            # This triggers if the log was cleared (e.g., Error 87 or 18)
+            # Catch expected errors during seek after a clear/wrap (like 87 or 18)
             if e_seek.winerror == ERROR_INVALID_PARAMETER or e_seek.winerror == ERROR_NO_MORE_ITEMS:
-                print(f"[{log_type}] Log cleared or record {read_from_record} overwritten. Re-syncing to newest log...")
-                # Re-sync by finding the oldest available record
-                oldest_record = win32evtlog.GetOldestEventLogRecord(handle)
-                print(f"[{log_type}] Oldest available record is now {oldest_record}. Reading from there.")
-                # Read sequentially from the new oldest record
-                try:
-                    flags_seq = win32evtlog.EVENTLOG_FORWARDS_READ | win32evtlog.EVENTLOG_SEEK_READ
-                    events = win32evtlog.ReadEventLog(handle, flags_seq, oldest_record)
-                except Exception as e_seq:
-                    print(f"[{log_type}] Failed to re-sync sequentially: {e_seq}. Skipping cycle.")
-                    win32evtlog.CloseEventLog(handle)
-                    return [], newest_available_record # Reset to newest to be safe
+                 print(f"[{log_type}] Seek failed after re-sync. Log likely cleared again. Skipping cycle.")
+                 return [], newest_available_record 
             else:
-                # Different, unexpected error
-                print(f"[{log_type}] Unexpected error reading log: {e_seek}. Skipping cycle.")
-                if handle: win32evtlog.CloseEventLog(handle)
-                return [], last_record_number
+                 raise e_seek 
         
-        # --- Process the batch of events ---
+        # --- 4. Process the batch of events ---
         while events:
             for event in events:
                 record_num = event.RecordNumber
-                # This check is redundant due to SEEK_READ, but good for safety
-                if record_num <= last_record_number:
-                    continue 
-
+                
                 processed = get_event_details(event)
                 if processed:
                     events_read_list.append(processed)
                     highest_record_read = max(highest_record_read, record_num)
 
-            # Read the next batch
+            # Read the next batch (SEQUENTIAL_READ)
             try:
                 flags_cont = win32evtlog.EVENTLOG_FORWARDS_READ | win32evtlog.EVENTLOG_SEQUENTIAL_READ
                 events = win32evtlog.ReadEventLog(handle, flags_cont, 0)
             except win32evtlog.error as e_cont:
                 if e_cont.winerror == ERROR_NO_MORE_ITEMS:
-                    events = [] # No more events, break loop
-                elif e_cont.winerror == ERROR_INVALID_HANDLE:
-                    print(f"[{log_type}] Handle became invalid during read. Stopping cycle.")
-                    events = []
+                    events = [] 
                 else:
-                    print(f"[{log_type}] Error continuing read: {e_cont}")
+                    print(f"[{log_type}] Error continuing sequential read: {e_cont}. Stopping cycle.")
                     events = []
         
-        return events_read_list, highest_record_read
+        # Update the position if new logs were read or if a clear/wrap happened
+        if log_was_cleared or highest_record_read > last_record_number:
+            return events_read_list, highest_record_read 
+        
+        return events_read_list, last_record_number
 
+    except pywintypes.error as e_invalid_handle:
+        # Catch Invalid Handle error (Error 6) and other pywintypes errors
+        print(f"[{log_type}] CRITICAL Error in fetch_new_events: WinError {e_invalid_handle.winerror} - {e_invalid_handle.strerror}")
+        return [], last_record_number 
+        
     except Exception as e_outer:
-        print(f"[{log_type}] CRITICAL Error in fetch_new_events: {e_outer}")
+        print(f"[{log_type}] CRITICAL UNHANDLED Error in fetch_new_events: {e_outer}")
         traceback.print_exc()
         return [], last_record_number
     finally:
@@ -236,17 +231,16 @@ def fetch_new_events(server, log_type, last_record_number):
             try:
                 win32evtlog.CloseEventLog(handle)
             except:
-                pass # Handle might be invalid, that's fine
+                pass # Ignore if close fails
 
-# --- ================================================================== ---
-# --- *** END OF NEW FUNCTIONS *** ---
-# --- ================================================================== ---
-
+# ----------------------------------------------------------------------
+# Log Sending Functions
+# ----------------------------------------------------------------------
 
 def send_logs_in_batches(logs, log_type):
     """Sends logs in batches to avoid overwhelming the server or hitting timeouts."""
     total_sent = 0
-    batch_success = True # Assume success unless a batch fails
+    batch_success = True 
     for i in range(0, len(logs), LOG_BATCH_SIZE):
         batch = logs[i:i + LOG_BATCH_SIZE]
         if not send_logs_to_server(batch, log_type):
@@ -294,6 +288,9 @@ def send_logs_to_server(logs_batch, log_type):
          traceback.print_exc()
          return False
 
+# ----------------------------------------------------------------------
+# Main Monitoring Loop
+# ----------------------------------------------------------------------
 
 def monitor_log(log_type):
     """Monitors a single log source continuously."""
@@ -306,7 +303,7 @@ def monitor_log(log_type):
             if highest_record_read_this_cycle > last_record_before_fetch:
                 send_success = True
                 if new_logs:
-                    print(f"[{log_type}] Found {len(new_logs)} new logs (up to record {highest_record_read_this_cycle}). Sending in batches...")
+                    print(f"[{log_type}] Found {len(new_logs)} new logs (up to record {highest_record_read_this_cycle}). Sending...") 
                     send_success = send_logs_in_batches(new_logs, log_type)
 
                 if send_success:
@@ -317,10 +314,9 @@ def monitor_log(log_type):
             time.sleep(POLL_INTERVAL)
 
         except Exception as e:
-            print(f"[{log_type}] UNEXPECTED ERROR in monitor loop: {e}")
+            print(f"[{log_type}] UNEXPECTED ERROR in monitor loop (Outer): {e}")
             traceback.print_exc()
-            print(f"[{log_type}] Attempting to recover...")
-            time.sleep(POLL_INTERVAL * 3) # Wait longer after an unexpected error
+            time.sleep(POLL_INTERVAL * 3) 
 
 
 def main():
@@ -334,27 +330,14 @@ def main():
 
     threads = []
     for source in LOG_SOURCES_TO_MONITOR:
-        # Give each thread a name for easier debugging
         thread = threading.Thread(target=monitor_log, args=(source,), name=f"Monitor-{source}", daemon=True)
         threads.append(thread)
         thread.start()
 
-    # Keep the main thread alive while monitoring threads run
     try:
         while True:
-            # Check if any monitoring thread has unexpectedly died (optional but recommended)
-            for i, t in enumerate(threads):
-                 if not t.is_alive():
-                      source = LOG_SOURCES_TO_MONITOR[i]
-                      print(f"CRITICAL: Monitoring thread for '{source}' has stopped unexpectedly! Attempting restart...")
-                      # Basic restart logic
-                      new_thread = threading.Thread(target=monitor_log, args=(source,), name=f"Monitor-{source}-Restarted", daemon=True)
-                      threads[i] = new_thread
-                      new_thread.start()
-                      print(f"Restarted monitor thread for {source}.")
-
-
-            time.sleep(60) # Check thread status every minute
+            # Check thread status every minute
+            time.sleep(60) 
 
     except KeyboardInterrupt:
         print("\nCtrl+C detected. Agent shutting down gracefully.")
@@ -363,32 +346,30 @@ def main():
          traceback.print_exc()
     finally:
         print("Agent shutdown complete.")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
-    is_admin = False # Default to false
+    is_admin = False 
     try:
-        # Attempt Windows check first as it's more likely needed
-        import ctypes
-        is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
-    except (ImportError, AttributeError):
-        # Fallback for non-Windows or if ctypes fails
-        try:
-           is_admin = os.getuid() == 0
-        except AttributeError:
-             print("Warning: Could not determine admin privileges. Assuming non-admin.")
-
+        # Check for admin privileges on Windows
+        if sys.platform.startswith('win'):
+            # CORRECTED: IsUserAnAdmin is the correct function name
+            is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0 
+        else:
+            # Check for root on Linux/macOS (less relevant for win32evtlog)
+            is_admin = os.getuid() == 0
+    except Exception:
+        # Default fallback, proceed to main and rely on the win32evtlog to fail clearly
+        is_admin = True 
+    
     if not is_admin:
         print("\n" + "="*60)
         print("ERROR: Administrator Privileges Required")
-        print("This agent needs to run as an Administrator to access Windows Event Logs.")
-        print("Please close this window and re-launch the script using:")
-        print("1. Right-click Command Prompt/PowerShell")
-        print("2. Select 'Run as administrator'")
-        print("3. Navigate to the project folder and run 'python agent.py'")
+        print("This agent needs to run as an Administrator/Root to access Event Logs.")
+        print("Please close this window and re-launch the script using 'Run as administrator'.")
         print("="*60 + "\n")
-        # Keep window open for user to read on Windows
-        if os.name == 'nt':
+        if sys.platform.startswith('win'):
             input("Press Enter to exit...")
     else:
         main()

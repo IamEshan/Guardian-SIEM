@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Incident Tracker - Full History</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        /* Reusing styles from dashboard.html */
+        :root { --bg: #2c3e50; --text: #ecf0f1; --header: #e74c3c; --card-bg: #34495e; --log-bg: #46627f; --input-bg: #5dade2; --nav-bg: #22303f; --accent: #1abc9c; --warn: #f39c12; --crit: #e74c3c; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: var(--bg); color: var(--text); padding: 20px; }
+        h1 { color: var(--header); }
+        .controls { background: var(--card-bg); padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; }
+        .controls input, .controls button { padding: 8px; border: none; border-radius: 4px; }
+        .controls input[type="date"] { background-color: var(--log-bg); color: var(--text); }
+        .controls button { background-color: var(--accent); color: var(--bg); cursor: pointer; font-weight: bold; }
+        .ticket-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9em; }
+        .ticket-table th, .ticket-table td { padding: 10px; border: 1px solid #566573; text-align: left; }
+        .ticket-table th { background-color: #46627f; color: var(--accent); }
+        .status-badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; color: var(--bg); }
+        .status-OPEN { background-color: var(--crit); }
+        .status-IN_PROGRESS { background-color: var(--warn); }
+        .status-RESOLVED, .status-FALSE_POSITIVE, .status-CLOSED { background-color: var(--accent); }
+        .ticket-details { max-width: 400px; max-height: 100px; overflow-y: auto; font-size: 0.8em; background: #2f4051; padding: 5px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1><i class="fas fa-ticket-alt"></i> Full Incident Ticket Tracker (Tier {{ user_role | upper }})</h1>
+    
+    <div class="controls">
+        <label for="start-date-input">Start Date:</label>
+        <input type="date" id="start-date-input">
+        
+        <label for="end-date-input">End Date:</label>
+        <input type="date" id="end-date-input">
+        
+        <button onclick="fetchFullTickets()">Apply Filter</button>
+        <button onclick="resetFilter()" style="background-color: #f39c12;">Show All History</button>
+        
+        <span style="margin-left: auto;">Total Tickets Found: <strong id="total-ticket-count" style="color: var(--accent);">0</strong></span>
+    </div>
+
+    <div id="table-container">
+        <p style="text-align: center; color: #aaa;">Loading all incident history...</p>
+        <table class="ticket-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Title</th>
+                    <th>Created By</th>
+                    <th>Creation Date</th>
+                    <th>Resolution Date</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th>Agent ID</th>
+                    <th>Details Preview</th>
+                </tr>
+            </thead>
+            <tbody id="ticket-history-body">
+                </tbody>
+        </table>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchFullTickets();
+        });
+
+        function resetFilter() {
+            document.getElementById('start-date-input').value = '';
+            document.getElementById('end-date-input').value = '';
+            fetchFullTickets();
+        }
+
+        async function fetchFullTickets() {
+            const startDate = document.getElementById('start-date-input').value;
+            const endDate = document.getElementById('end-date-input').value;
+
+            let url = '/api/all_tickets';
+            let params = [];
+            
+            // Convert human dates to millisecond Unix timestamp for backend
+            if (startDate) {
+                const startDt = new Date(startDate);
+                // Set start of day in milliseconds
+                params.push(`start_ts=${startDt.getTime()}`);
+            }
+            if (endDate) {
+                const endDt = new Date(endDate);
+                // Set end of day (23:59:59.999) in milliseconds
+                params.push(`end_ts=${endDt.getTime() + 86399999}`); 
+            }
+            
+            if (params.length > 0) {
+                url += '?' + params.join('&');
+            }
+
+            try {
+                document.getElementById('ticket-history-body').innerHTML = '<tr><td colspan="9" style="text-align:center;">Fetching ticket data...</td></tr>';
+                
+                const response = await fetch(url);
+                const tickets = await response.json();
+                
+                if (tickets.error) {
+                    document.getElementById('ticket-history-body').innerHTML = `<tr><td colspan="9" style="text-align:center; color: var(--crit);">Error: ${tickets.error}</td></tr>`;
+                    document.getElementById('total-ticket-count').innerText = '0';
+                    return;
+                }
+                
+                renderTicketTable(tickets);
+                document.getElementById('total-ticket-count').innerText = tickets.length;
+
+            } catch (error) {
+                console.error("Network error fetching full tickets:", error);
+                document.getElementById('ticket-history-body').innerHTML = `<tr><td colspan="9" style="text-align:center; color: var(--crit);">Network Error.</td></tr>`;
+                document.getElementById('total-ticket-count').innerText = '0';
+            }
+        }
+
+        function renderTicketTable(tickets) {
+            const tableBody = document.getElementById('ticket-history-body');
+            tableBody.innerHTML = ''; 
+
+            if (tickets.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center;">No tickets found in this period.</td></tr>';
+                return;
+            }
+
+            tickets.forEach(ticket => {
+                const row = tableBody.insertRow();
+                
+                // Status coloring
+                const statusClass = `status-${ticket.status.replace(/[\s\/]/g, '_')}`;
+
+                row.innerHTML = `
+                    <td>#${ticket.id}</td>
+                    <td>${ticket.title}</td>
+                    <td>${ticket.created_by}</td>
+                    <td>${ticket.creation_date || 'N/A'}</td>
+                    <td>${ticket.resolution_date || 'N/A'}</td>
+                    <td>${ticket.priority}</td>
+                    <td><span class="status-badge ${statusClass}">${ticket.status}</span></td>
+                    
+                    <td>${ticket.agent_id_for_display || 'N/A'}</td> 
+                    
+                    <td><div class="ticket-details">${ticket.details_preview_text || 'No preview available'}</div></td>
+                `;
+            });
+        }
+    </script>
+</body>
+</html>
